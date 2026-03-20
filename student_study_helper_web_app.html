@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Law Student OS - Free AI</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Firebase -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+  <!-- Axios -->
+  <script defer src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+  <style>
+    body { margin:0; font-family:Inter; background:linear-gradient(135deg,#eef2ff,#f8fafc);} 
+    .center {display:flex;justify-content:center;align-items:center;height:100vh;}
+    .login-box {background:white;padding:30px;border-radius:16px;width:300px;box-shadow:0 10px 30px rgba(0,0,0,0.1);} 
+    input, textarea, select {width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:1px solid #ddd;}
+    button {width:100%;padding:10px;border:none;border-radius:8px;background:#6366f1;color:white;font-weight:bold;cursor:pointer;margin-bottom:5px;}
+    .app {display:none;grid-template-columns:240px 1fr;height:100vh;}
+    .sidebar {background:#111827;color:white;padding:20px;}
+    .main {padding:20px;}
+    .card {background:white;padding:15px;border-radius:12px;margin-bottom:15px;}
+    ul{list-style:none;padding:0}
+    li{display:flex;justify-content:space-between;background:#f1f5f9;padding:8px;border-radius:6px;margin-bottom:5px}
+  </style>
+</head>
+<body>
+
+<div class="center" id="loginPage">
+  <div class="login-box">
+    <h2>⚖️ Law Student OS</h2>
+    <input id="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+    <button onclick="signUp()">Sign Up</button>
+    <button onclick="login()">Login</button>
+    <p id="error" style="color:red"></p>
+  </div>
+</div>
+
+<div class="app" id="app">
+  <div class="sidebar">
+    <h2>⚖️ Law OS</h2>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <div class="main">
+
+    <div class="card">
+      <h3>Welcome</h3>
+      <p id="userEmail"></p>
+    </div>
+
+    <div class="card">
+      <h3>📚 Study Tasks</h3>
+      <select id="subject">
+        <option>Criminal Law</option>
+        <option>Constitutional Law</option>
+        <option>Hindu Law</option>
+        <option>Land Law</option>
+        <option>Contract Law</option>
+      </select>
+      <input id="taskInput" placeholder="e.g. Read section 300 IPC">
+      <button onclick="addTask()">Add Task</button>
+      <ul id="taskList"></ul>
+    </div>
+
+    <div class="card">
+      <h3>⚖️ Case Notes</h3>
+      <input id="caseName" placeholder="Case Name">
+      <textarea id="caseDetails" placeholder="Facts, Issue, Judgment..."></textarea>
+      <button onclick="saveCase()">Save Case</button>
+      <ul id="caseList"></ul>
+    </div>
+
+    <div class="card">
+      <h3>🤖 AI Law Assistant (Free API)</h3>
+      <textarea id="notes" rows="5" placeholder="Paste legal topic / section..."></textarea>
+      <button onclick="aiAnswer()">Generate Exam Answer</button>
+      <textarea id="aiOutput" rows="6" placeholder="AI output..."></textarea>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyACxLdBd3puUGmGCXWSf1RRa8lRqOGQt3E",
+    authDomain: "study-helper-62774.firebaseapp.com",
+    projectId: "study-helper-62774",
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  let currentUser = null;
+
+  function showError(msg){ document.getElementById('error').textContent = msg; }
+
+  window.signUp = () => auth.createUserWithEmailAndPassword(emailInput(), passwordInput()).catch(e=>showError(e.message));
+  window.login = () => auth.signInWithEmailAndPassword(emailInput(), passwordInput()).catch(e=>showError(e.message));
+  window.logout = () => auth.signOut();
+  function emailInput(){ return document.getElementById('email').value }
+  function passwordInput(){ return document.getElementById('password').value }
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      currentUser = user;
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('app').style.display = 'grid';
+      document.getElementById('userEmail').textContent = user.email;
+      loadTasks();
+      loadCases();
+    } else {
+      document.getElementById('loginPage').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+    }
+  });
+
+  // TASKS
+  window.addTask = async () => {
+    const text = document.getElementById('taskInput').value;
+    const subject = document.getElementById('subject').value;
+    if(!text) return;
+    await db.collection('tasks').add({ userId: currentUser.uid, text, subject });
+    document.getElementById('taskInput').value='';
+    loadTasks();
+  }
+  async function loadTasks(){
+    const list = document.getElementById('taskList'); list.innerHTML='';
+    const snap = await db.collection('tasks').where('userId','==',currentUser.uid).get();
+    snap.forEach(doc=>{
+      const li=document.createElement('li');
+      li.innerHTML=`${doc.data().subject}: ${doc.data().text} <button onclick="deleteTask('${doc.id}')">X</button>`;
+      list.appendChild(li);
+    });
+  }
+  window.deleteTask = async (id)=>{ await db.collection('tasks').doc(id).delete(); loadTasks(); }
+
+  // CASES
+  window.saveCase = async () => {
+    const name = document.getElementById('caseName').value;
+    const details = document.getElementById('caseDetails').value;
+    if(!name || !details) return;
+    await db.collection('cases').add({ userId: currentUser.uid, name, details });
+    document.getElementById('caseName').value='';
+    document.getElementById('caseDetails').value='';
+    loadCases();
+  }
+  async function loadCases(){
+    const list = document.getElementById('caseList'); list.innerHTML='';
+    const snap = await db.collection('cases').where('userId','==',currentUser.uid).get();
+    snap.forEach(doc=>{
+      const li=document.createElement('li');
+      li.innerHTML=`${doc.data().name} <button onclick="deleteCase('${doc.id}')">X</button>`;
+      list.appendChild(li);
+    });
+  }
+  window.deleteCase = async(id)=>{ await db.collection('cases').doc(id).delete(); loadCases(); }
+
+  // AI LAW ASSISTANT - Use Local Simulated Free AI
+  window.aiAnswer = async () => {
+    const topic = document.getElementById('notes').value;
+    if(!topic) return;
+    document.getElementById('aiOutput').value = 'Generating AI answer locally...';
+
+    // Simple simulated AI logic for offline / free usage
+    setTimeout(() => {
+      const simulatedAnswer = `Exam Answer for "${topic}":\n\n1. Introduction: Brief overview of the topic.\n2. Key Points: Explain important legal principles.\n3. Case References: Mention relevant cases if applicable.\n4. Conclusion: Summarize answer effectively.`;
+      document.getElementById('aiOutput').value = simulatedAnswer;
+    }, 1000);
+  }
+
+});
+</script>
+
+</body>
+</html>
